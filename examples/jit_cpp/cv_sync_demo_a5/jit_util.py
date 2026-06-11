@@ -14,11 +14,20 @@ from common_build import build
 _DEVICE = os.environ.get("NPU_DEVICE", "npu:0")
 
 
-def _block_dim() -> int:
+def _block_dim(override: int | None = None) -> int:
+    if override is not None:
+        return override
+    env_override = os.environ.get("PTO_BLOCK_DIM")
+    if env_override:
+        return int(env_override)
     try:
         return int(getattr(torch.npu.get_device_properties(_DEVICE), "cube_core_num", 20))
     except (RuntimeError, AssertionError):
         return 32
+
+
+def resolve_block_dim(override: int | None = None) -> int:
+    return _block_dim(override)
 
 
 BLOCK_DIM = _block_dim()
@@ -70,9 +79,9 @@ def load_lib(verbose: bool = True) -> ctypes.CDLL:
 
 
 class CvSyncKernels:
-    def __init__(self, verbose: bool = True) -> None:
+    def __init__(self, verbose: bool = True, block_dim: int | None = None) -> None:
         self.lib = load_lib(verbose=verbose)
-        self.block_dim = BLOCK_DIM
+        self.block_dim = resolve_block_dim(block_dim)
 
     def stream_c2v(self, A: torch.Tensor, B: torch.Tensor, num_iters: int) -> None:
         self.lib.cv_stream_c2v(
